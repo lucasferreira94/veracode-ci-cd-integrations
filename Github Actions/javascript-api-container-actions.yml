@@ -1,0 +1,68 @@
+name: security-action
+on:
+  push:
+    branches: [feature/container-veracode-action]
+
+jobs:
+
+  veracode-software-composition-analisys:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+    - name: sca scan
+      env:
+        SRCCLR_API_TOKEN: ${{ secrets.SRCCLR_API_TOKEN }}
+      run: |
+        export SRCCLR_SCM_REF=${{ github.workflow }}
+        export SRCCLR_SCM_REF_TYPE="branch"
+        export SRCCLR_SCM_REV=${{ github.run_id }}
+        export SRCCLR_SCM_TYPE="GITHUB"
+        export EXTRA_ARGS='--update-advisor --uri-as-name --ref ${{ github.ref_name }}' 
+
+        curl -sSL https://download.sourceclear.com/ci.sh | bash -s -- scan $EXTRA_ARGS
+    continue-on-error: true
+    
+  veracode_sast_sandbox_scan:
+    runs-on: ubuntu-latest
+    needs: [ veracode-software-composition-analisys ]
+    container:
+      image: veracode/api-wrapper-java:latest
+      options: --user root
+    steps:
+      - name: checkout
+        uses: actions/checkout@master
+        
+      - name: archive and upload branch scan
+        run: |
+          zip -r -v upload.zip . -i '*.js' '*.html' '*.htm' '*.json' '*.html' '*.ts' '*.tsx' '*.css' '*.jsp' '*.vue'
+          java -jar /opt/veracode/api-wrapper.jar -vid "${{ secrets.VERACODE_ID }}" -vkey "${{ secrets.VERACODE_KEY }}" -action UploadAndScan -createprofile true -appname "verademo-javascript-api" -version "${{ github.run_id }}" -filepath upload.zip -teams "Showroom_LucasFerreira" -criticality "Medium" -createsandbox true -sandboxname "${{ github.ref }}" -lifecyclestage "InDevelopmentPreAlpha" 
+  
+  veracode_sast_policy_scan:
+    runs-on: ubuntu-latest
+    needs: [ veracode-software-composition-analisys, veracode_sast_sandbox_scan ]
+    container:
+      image: veracode/api-wrapper-java:latest
+      options: --user root
+    steps:
+      - name: checkout
+        uses: actions/checkout@master
+        
+      - name: archive and upload policy scan
+        run: |
+          zip -r -v upload.zip . -i '*.js' '*.html' '*.htm' '*.json' '*.html' '*.ts' '*.tsx' '*.css' '*.jsp' '*.vue'
+          java -jar /opt/veracode/api-wrapper.jar -vid "${{ secrets.VERACODE_ID }}" -vkey "${{ secrets.VERACODE_KEY }}" -action UploadAndScan -createprofile true -appname "verademo-javascript-api" -version "${{ github.run_id }}" -filepath upload.zip -deleteincompletescan 2 -teams "Showroom_LucasFerreira" -criticality "Medium" -lifecyclestage "InDevelopmentPreAlpha" 
+  
+  veracode_sast_pipeline_scan:
+    runs-on: ubuntu-latest
+    needs: [ veracode-software-composition-analisys, veracode_sast_sandbox_scan, veracode_sast_policy_scan ]
+    container:
+      image: veracode/pipeline-scan:latest
+      options: --user root
+    steps:
+      - name: checkout
+        uses: actions/checkout@master
+          
+      - name: archive and upload quick sast scan 
+        run: |
+          zip -r -v upload.zip . -i '*.js' '*.html' '*.htm' '*.json' '*.html' '*.ts' '*.tsx' '*.css' '*.jsp' '*.vue'
+          java -jar /opt/veracode/pipeline-scan.jar -vid "${{ secrets.VERACODE_ID }}" -vkey "${{ secrets.VERACODE_KEY }}" -f upload.zip -p "verademo-javascript-api" -ds "Development" -r "${{ github.ref_name }}" -u "github.com/lucasaspertec/verademo-javascript-api"
