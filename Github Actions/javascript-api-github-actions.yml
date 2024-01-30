@@ -1,0 +1,107 @@
+name: security-action
+on:
+  push:
+    branches: [feature/github-actions]
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Empacotamento dos arquivos
+        uses: thedoctor0/zip-release@0.7.5
+        with:
+          type: 'zip'
+          filename: 'upload.zip'
+          exclusions: '*.git* *.github* /*node_modules/* *.txt *.png *.jpg *.sample *.yml *.yaml *.zip *.md *.pdf'
+          
+      - name: Publicando Artefato
+        uses: actions/upload-artifact@v2
+        with:
+          name: pacoteVeracode
+          path: upload.zip
+
+  veracode-sca:
+    runs-on: ubuntu-latest
+    name: veracode sca
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        
+      - name: veracode sca scan
+        env: 
+          SRCCLR_API_TOKEN: ${{ secrets.SRCCLR_API_TOKEN }}
+        run: curl -sSL https://download.sourceclear.com/ci.sh | sh -s scan --update-advisor --uri-as-name --ref ${{ github.ref_name }}
+
+  veracode_sast_sandbox_scan:
+    name: veracode sandbox branch scan
+    runs-on: ubuntu-latest
+    needs: [ archive ]
+    
+    steps:
+      - name: Check out main branch
+        uses: actions/checkout@v2
+        
+      - name: Download Artefato
+        uses: actions/download-artifact@v2
+        with:
+          name: pacoteVeracode
+
+      - name: Veracode Upload And Scan
+        uses: veracode/veracode-uploadandscan-action@0.2.6
+        with:
+          appname: 'verademo-javascript-api'
+          createprofile: false
+          filepath: 'upload.zip'
+          vid: '${{ secrets.VERACODE_ID }}'
+          vkey: '${{ secrets.VERACODE_KEY }}'
+          createsandbox: 'true'
+          sandboxname: "${{ github.ref }}"
+          version: "${{ github.run_id }}"
+          scantimeout: 0
+
+  veracode_sast_policy_scan:
+    name: veracode policy scan
+    runs-on: ubuntu-latest
+    needs: [ archive, veracode_sast_sandbox_scan, veracode-sca ]
+    
+    steps:
+      - name: Check out main branch
+        uses: actions/checkout@v2
+        
+      - name: Download Artefato
+        uses: actions/download-artifact@v2
+        with:
+          name: pacoteVeracode
+
+      - name: Veracode Upload And Scan
+        uses: veracode/veracode-uploadandscan-action@0.2.6
+        with:
+          appname: 'verademo-javascript-api'
+          createprofile: false
+          filepath: 'upload.zip'
+          vid: '${{ secrets.VERACODE_ID }}'
+          vkey: '${{ secrets.VERACODE_KEY }}'
+          version: "${{ github.run_id }}"
+          scantimeout: 0
+
+  veracode_sast_pipeline_scan:
+    runs-on: ubuntu-latest
+    needs: [ archive, veracode_sast_sandbox_scan ]
+    name: veracode sast pipeline scan
+
+    steps:
+      - name: Download Artefato
+        uses: actions/download-artifact@v2
+        with:
+          name: pacoteVeracode
+
+      - name: pipeline-scan action step
+        id: pipeline-scan
+        uses: veracode/Veracode-pipeline-scan-action@v1.0.12
+        with:
+          vid: ${{ secrets.VERACODE_ID }}
+          vkey: ${{ secrets.VERACODE_KEY }}
+          file: "upload.zip"
+          fail_build: "true"
