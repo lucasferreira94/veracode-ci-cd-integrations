@@ -1,0 +1,126 @@
+trigger:
+- feature-abc3
+
+pool:
+  vmImage: windows-latest
+
+stages:
+  - stage: Build
+    jobs:
+    - job: dotnetBuild
+      steps:
+      - task: UseDotNet@2
+        inputs:
+          version: '3.1.x'
+
+      - task: DotNetCoreCLI@2
+        inputs:
+          command: 'build'
+          publishWebProjects: true
+          arguments: '-c Debug -p:UseAppHost=false'
+          workingDirectory: '$(Build.SourcesDirectory)/app'
+          
+      - task: ArchiveFiles@2
+        inputs:
+          rootFolderOrFile: '$(Build.SourcesDirectory)/app/bin/Debug/netcoreapp3.1'
+          includeRootFolder: false
+          archiveType: 'zip'
+          archiveFile: '$(Build.ArtifactStagingDirectory)/upload.zip'
+          replaceExistingArchive: true
+          verbose: true 
+      - task: CmdLine@2
+        inputs:
+          script: 'ls -l $(Build.ArtifactStagingDirectory)'
+          
+      - task: PublishBuildArtifacts@1
+        inputs:
+          PathtoPublish: '$(Build.ArtifactStagingDirectory)/upload.zip'
+          ArtifactName: 'upload'
+
+  - stage: sast_sandbox_scan
+    jobs:
+    - job: sast_sandbox_scan
+      steps:
+      - task: DownloadBuildArtifacts@1
+        inputs:
+          artifactName: upload
+      
+      - task: CmdLine@2
+        inputs:
+          script: |
+            curl -o VeracodeCSharpAPI.zip https://tools.veracode.com/integrations/API-Wrappers/CSharp/bin/VeracodeCSharpAPI.zip
+            
+            unzip VeracodeCSharpAPI.zip
+            
+            cd VeracodeCSharpAPI
+
+            $(veracode_csharp) -action uploadandscan -vid $(VERACODE_ID) -vkey $(VERACODE_KEY) -appname verademo-dotnetcore -createprofile false -criticality High -sandboxname $(Build.SourceBranchName) -createsandbox true -version $(build.buildNumber)  -filepath $(Build.ArtifactStagingDirectory)/upload/upload.zip -toplevel true
+      displayName: Veracode SAST - Sandbox Branch Scan
+  
+  - stage: sast_policy_scan
+    jobs:
+    - job: sast_policy_scan
+      steps:
+
+      - task: DownloadBuildArtifacts@1
+        inputs:
+          artifactName: upload
+      
+      - task: CmdLine@2
+        inputs:
+          script: |
+            curl -o VeracodeCSharpAPI.zip https://tools.veracode.com/integrations/API-Wrappers/CSharp/bin/VeracodeCSharpAPI.zip
+            
+            unzip VeracodeCSharpAPI.zip
+            
+            cd VeracodeCSharpAPI
+            
+            $(veracode_csharp) -action uploadandscan -vid $(VERACODE_ID) -vkey $(VERACODE_KEY) -appname verademo-dotnetcore -createprofile false -criticality High -version $(build.buildNumber)  -filepath $(Build.ArtifactStagingDirectory)/upload/upload.zip -toplevel true
+      displayName: Veracode SAST - Policy Scan
+
+  - stage: sca_agent_based
+    jobs:
+      - job: veracode_sca
+        steps:
+
+        - task: PowerShell@2
+          inputs:
+            targetType: 'inline'
+            script: |
+              $env:SRCCLR_API_TOKEN='$(SRCCLR_API_TOKEN)'
+              $env:SRCCLR_SCM_URI='$(Build.Repository.Uri)'
+              $env:SRCCLR_SCM_REF='$(Build.SourceBranchName)'
+              $env:SRCCLR_SCM_REF_TYPE='branch'
+              $env:SRCCLR_SCM_REV='$(Build.SourceVersion)'
+
+              Set-ExecutionPolicy AllSigned -Scope Process -Force
+
+              $ProgressPreference = "silentlyContinue"; iex ((New-Object System.Net.WebClient).DownloadString('https://download.sourceclear.com/ci.ps1'))
+
+              srcclr scan $(Build.SourcesDirectory)\app --update-advisor --uri-as-name
+        displayName: 'Veracode SCA - Agent-Based Scan'
+
+  - stage: veracode_sast_pipeline_scan
+    jobs:
+    - job: PipelineScan
+      steps:
+      
+      - task: DownloadBuildArtifacts@1
+        inputs:
+          artifactName: upload
+        
+      - task: PowerShell@2
+        inputs:
+          targetType: 'inline'
+          script: |
+            Set-ExecutionPolicy AllSigned -Scope Process -Force
+
+            $ProgressPreference = "silentlyContinue"; iex ((New-Object System.Net.WebClient).DownloadString('https://tools.veracode.com/veracode-cli/install.ps1'))
+
+            $env:VERACODE_API_KEY_ID='$(VERACODE_ID)'
+            $env:VERACODE_API_KEY_SECRET='$(VERACODE_KEY)'
+
+            veracode configure
+
+            veracode static scan $(Build.ArtifactStagingDirectory)/upload/upload.zip --include "app.Views.dll" --project-name verademo-dotnetcore --app-id 1953499
+        displayName: Veracode SAST - Pipeline Scan
