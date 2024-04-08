@@ -2,10 +2,10 @@
 
 # --- CHECAGEM DE UTILITARIOS ---
 
-[ ! -x "$(which jq)" ] && sudo apt update; apt install jq -y
-[ ! -x "$(which http)" ] && sudo apt update; apt install httpie -y
-[ ! -x "$(which python3)" ] && sudo apt update; apt install python3 -y
-[ ! -x "$(which pip3)" ] && sudo apt update; apt install python3-pip -y && pip install veracode-api-signing
+[ ! -x "$(which jq)" ] && apt update && apt install jq -y
+[ ! -x "$(which http)" ] && apt update && apt install httpie -y
+[ ! -x "$(which python3)" ] && apt update && apt install python3 -y
+[ ! -x "$(which pip3)" ] && apt update && apt install python3-pip -y && pip install veracode-api-signing
 
 # ---- VARIAVEIS ---- 
 
