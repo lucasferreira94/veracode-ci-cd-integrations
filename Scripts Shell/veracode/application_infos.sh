@@ -16,7 +16,7 @@ APP_ID=$(http --auth-type=veracode_hmac GET "https://api.veracode.com/appsec/v1/
 POLICY_NAME=$(http --auth-type=veracode_hmac GET "https://api.veracode.com/appsec/v1/applications/?name="$APP | jq '._embedded.applications' | jq .'[] | .profile.policies | .[].name' | sed 's/\"//g')
 POLICY_STATUS=$(http --auth-type=veracode_hmac GET "https://api.veracode.com/appsec/v1/applications/?name="$APP | jq '._embedded.applications' | jq .'[] | .profile.policies | .[].policy_compliance_status' | sed 's/\"//g')
 TEAM_NAME=$(http --auth-type=veracode_hmac GET "https://api.veracode.com/appsec/v1/applications/?name="$APP | jq '._embedded.applications | .[] | .profile.teams | .[].team_name' | sed 's/\"//g')
-SANDBOXES_NAMES=$(http --auth-type=veracode_hmac GET "https://api.veracode.com/appsec/v1/applications/dc8c9dea-ac59-4d4d-ada7-4f2331c442c7/sandboxes" | jq '._embedded.sandboxes | .[] | .name' | sed 's/\"//g')
+SANDBOXES_NAMES=$(http --auth-type=veracode_hmac GET "https://api.veracode.com/appsec/v1/applications/${GUID}/sandboxes" | jq '._embedded.sandboxes | .[] | .name' | sed 's/\"//g')
 
 # --- ---
 
